@@ -76,9 +76,9 @@ class AnimPlayer(val animView: IAnimView) {
         decoder?.onSurfaceSizeChanged(width, height)
     }
 
-    fun startPlay(fileContainer: IFileContainer) {
+    fun startPlay(fileContainer: IFileContainer, autoDismiss: Boolean) {
         isStartRunning = true
-        prepareDecoder()
+        prepareDecoder(autoDismiss)
         if (decoder?.prepareThread() == false) {
             isStartRunning = false
             decoder?.onFailed(Constant.REPORT_ERROR_TYPE_CREATE_THREAD, Constant.ERROR_MSG_CREATE_THREAD)
@@ -133,9 +133,9 @@ class AnimPlayer(val animView: IAnimView) {
 
     }
 
-    private fun prepareDecoder() {
+    private fun prepareDecoder(autoDismiss: Boolean) {
         if (decoder == null) {
-            decoder = HardDecoder(this).apply {
+            decoder = HardDecoder(this, autoDismiss).apply {
                 playLoop = this@AnimPlayer.playLoop
                 fps = this@AnimPlayer.fps
             }

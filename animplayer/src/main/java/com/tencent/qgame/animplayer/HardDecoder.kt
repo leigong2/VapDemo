@@ -26,11 +26,17 @@ import com.tencent.qgame.animplayer.file.IFileContainer
 import com.tencent.qgame.animplayer.util.ALog
 import com.tencent.qgame.animplayer.util.MediaUtil
 
-class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameAvailableListener {
+class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), SurfaceTexture.OnFrameAvailableListener {
 
 
     companion object {
         private const val TAG = "${Constant.TAG}.HardDecoder"
+    }
+
+    private var autoDismiss = true
+
+    init {
+        this.autoDismiss = autoDismiss
     }
 
     private var surface: Surface? = null
@@ -79,40 +85,43 @@ class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameA
             }
         }
     }
+    var extractor: MediaExtractor? = null
+    var decoder: MediaCodec? = null
 
     private fun startPlay(fileContainer: IFileContainer) {
 
-        var extractor: MediaExtractor? = null
-        var decoder: MediaCodec? = null
         var format: MediaFormat? = null
         var trackIndex = 0
 
         try {
             extractor = MediaUtil.getExtractor(fileContainer)
-            trackIndex = MediaUtil.selectVideoTrack(extractor)
-            if (trackIndex < 0) {
-                throw RuntimeException("No video track found")
-            }
-            extractor.selectTrack(trackIndex)
-            format = extractor.getTrackFormat(trackIndex)
-            if (format == null) throw RuntimeException("format is null")
-
-            // 是否支持h265
-            if (MediaUtil.checkIsHevc(format)) {
-                if (Build.VERSION.SDK_INT  < Build.VERSION_CODES.LOLLIPOP
-                    || !MediaUtil.checkSupportCodec(MediaUtil.MIME_HEVC)) {
-
-                    onFailed(Constant.REPORT_ERROR_TYPE_HEVC_NOT_SUPPORT,
-                        "${Constant.ERROR_MSG_HEVC_NOT_SUPPORT} " +
-                                "sdk:${Build.VERSION.SDK_INT}" +
-                                ",support hevc:" + MediaUtil.checkSupportCodec(MediaUtil.MIME_HEVC))
-                    release(null, null)
+            extractor?.apply {
+                trackIndex = MediaUtil.selectVideoTrack(this)
+                if (trackIndex < 0) {
                     return
                 }
+                this.selectTrack(trackIndex)
+                format = this.getTrackFormat(trackIndex)
             }
+            if (format == null) return
+            format?.also { _format ->
+                // 是否支持h265
+                if (MediaUtil.checkIsHevc(_format)) {
+                    if (Build.VERSION.SDK_INT  < Build.VERSION_CODES.LOLLIPOP
+                        || !MediaUtil.checkSupportCodec(MediaUtil.MIME_HEVC)) {
 
-            videoWidth = format.getInteger(MediaFormat.KEY_WIDTH)
-            videoHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
+                        onFailed(Constant.REPORT_ERROR_TYPE_HEVC_NOT_SUPPORT,
+                            "${Constant.ERROR_MSG_HEVC_NOT_SUPPORT} " +
+                                    "sdk:${Build.VERSION.SDK_INT}" +
+                                    ",support hevc:" + MediaUtil.checkSupportCodec(MediaUtil.MIME_HEVC))
+                        release(null, null)
+                        return
+                    }
+                }
+
+                videoWidth = _format.getInteger(MediaFormat.KEY_WIDTH)
+                videoHeight = _format.getInteger(MediaFormat.KEY_HEIGHT)
+            }
             // 防止没有INFO_OUTPUT_FORMAT_CHANGED时导致alignWidth和alignHeight不会被赋值一直是0
             alignWidth = videoWidth
             alignHeight = videoHeight
@@ -151,11 +160,11 @@ class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameA
         }
 
         try {
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+            val mime = format?.getString(MediaFormat.KEY_MIME) ?: ""
             ALog.i(TAG, "Video MIME is $mime")
             decoder = MediaCodec.createDecoderByType(mime).apply {
                 if (needYUV) {
-                    format.setInteger(
+                    format?.setInteger(
                             MediaFormat.KEY_COLOR_FORMAT,
                             MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
                     )
@@ -168,7 +177,7 @@ class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameA
                 start()
                 decodeThread.handler?.post {
                     try {
-                        startDecode(extractor, this)
+                        extractor?.also {startDecode(it, this)  }
                     } catch (e: Throwable) {
                         ALog.e(TAG, "MediaCodec exception e=$e", e)
                         onFailed(Constant.REPORT_ERROR_TYPE_DECODE_EXC, "${Constant.ERROR_MSG_DECODE_EXC} e=$e")
@@ -348,6 +357,13 @@ class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameA
     }
 
     private fun release(decoder: MediaCodec?, extractor: MediaExtractor?) {
+        if (!autoDismiss) {
+            return
+        }
+        realRelease(decoder, extractor)
+    }
+
+    private fun realRelease(decoder: MediaCodec?, extractor: MediaExtractor?) {
         renderThread.handler?.post {
             render?.clearFrame()
             try {
@@ -382,6 +398,7 @@ class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameA
         } else {
             destroyInner()
         }
+        realRelease(decoder, extractor)
     }
 
     private fun destroyInner() {

@@ -56,6 +56,8 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
     private var lastFile: IFileContainer? = null
     private val scaleTypeUtil = ScaleTypeUtil()
 
+    var autoDismiss: Boolean = true    //播放结束自动消耗，如果是false，则停留在最后一帧
+
     // 代理监听
     private val animProxyListener by lazy {
         object : IAnimListener {
@@ -74,7 +76,9 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
             }
 
             override fun onVideoComplete() {
-                hide()
+                if (autoDismiss) {
+                    hide()
+                }
                 animListener?.onVideoComplete()
             }
 
@@ -277,7 +281,7 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
             }
             if (!player.isRunning()) {
                 lastFile = fileContainer
-                player.startPlay(fileContainer)
+                player.startPlay(fileContainer, autoDismiss)
             } else {
                 ALog.e(TAG, "is running can not start")
             }
