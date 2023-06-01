@@ -10,11 +10,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        findViewById(R.id.text_view).setOnClickListener(v -> {
+        findViewById(R.id.textView).setOnClickListener(v -> {
             VapActivity.start(v.getContext());
-        });
-        findViewById(R.id.text_view2).setOnClickListener(v -> {
-            Vap2Activity.start(v.getContext());
         });
     }
 }
