@@ -8,6 +8,8 @@
 
     <TextView
         android:id="@+id/textView"
+        android:textColor="@color/colorPrimary"
+        android:text="测试"
         android:layout_gravity="center"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"/>

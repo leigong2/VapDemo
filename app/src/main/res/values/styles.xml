@@ -4,4 +4,5 @@
     <style name="AppTheme" parent="@android:style/Theme.Black.NoTitleBar">
     </style>
 
+    <style name="Theme.VapDemo" parent="Theme.AppCompat.Light.NoActionBar"/>
 </resources>

@@ -1,6 +1,9 @@
 package com.test.vapdemo
 
+import android.content.Context
+import android.text.TextUtils
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
@@ -8,13 +11,22 @@ import com.tencent.qgame.animplayer.AnimConfig
 import com.tencent.qgame.animplayer.AnimPlayer
 import com.tencent.qgame.animplayer.AnimView
 import com.tencent.qgame.animplayer.inter.IAnimListener
-import com.test.vapdemo.FieldUtils.getFieldValue
 import com.tencent.qgame.animplayer.util.IScaleType
 import com.tencent.qgame.animplayer.util.ScaleType
+import com.test.vapdemo.FieldUtils.getFieldValue
 import java.io.File
 
 class VaPlayerUtils {
     companion object {
+        /**
+         * 根据手机的分辨率从 dp 的单位 转成为 px(像素)
+         */
+        @JvmStatic
+        fun dp2px(context: Context, dpValue: Float): Int {
+            val scale: Float = context.getResources().getDisplayMetrics().density
+            return (dpValue * scale + 0.5f).toInt()
+        }
+
         @JvmStatic
         @JvmOverloads
         fun startPlay(
@@ -24,21 +36,25 @@ class VaPlayerUtils {
             scaleType: ScaleType = ScaleType.FIT_CENTER,
             autoDismiss: Boolean = true,
         ) {
-            for (i in 0 until viewGroup.childCount) {
+            val removeViews = ArrayList<View>()
+            for(i in 0 until  viewGroup.childCount) {
                 val it = viewGroup.getChildAt(i)
                 if (it is AnimView) {
-                    /*zune: 里面有正在播放的动画，则复用*/
-                    startPlay(it, assetsPath, null, scaleType)
-                    return
+                    removeViews.add(it)
                 }
             }
-            val animView = AnimView(viewGroup.context)
+            removeViews.forEach {
+                (it as AnimView).stopPlay()
+                viewGroup.removeView(it)
+            }
+            var animView: AnimView = AnimView(viewGroup.context)
+            viewGroup.addView(animView)
+            animView.setTag(assetsPath)
             if (loop) {
                 animView.setLoop(Int.MAX_VALUE)
             } else {
                 animView.setLoop(1)
             }
-            viewGroup.addView(animView)
             startPlay(
                 animView = animView,
                 assetsPath = assetsPath,
@@ -66,6 +82,15 @@ class VaPlayerUtils {
             file: File? = null,
             autoDismiss: Boolean = true,
         ) {
+            //#22945161 SIGSEGV(SEGV_MAPERR)
+            if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.M && !TextUtils.isEmpty(
+                    assetsPath
+                )
+            ) {
+                /*zune: 6.0手机播放assets文件夹里面的mp4文件，会遇到这个闪退，这里处理方式是直接不让播放了*/
+                listener?.onVideoComplete()
+                return
+            }
             /*zune: 这些播放需要全屏，自定义了setScaleType，重新给他设置了宽高*/
             if (scaleType == ScaleType.FIT_XY) {
                 resetFitXYScaleType(animView)
@@ -73,12 +98,17 @@ class VaPlayerUtils {
                 resetCenterInside(animView)
             }
             animView.autoDismiss = autoDismiss
+            if (assetsPath != null) {
+                animView.startPlay(animView.context.assets, assetsPath)
+            } else if (file != null) {
+                animView.startPlay(file)
+            }
             if (listener == null) {
                 animView.setAnimListener(object : IAnimListenerImp(animView) {
                     override fun onVideoComplete(animView: AnimView) {
                         val playLoop = (animView.getFieldValue("player") as? AnimPlayer)?.playLoop
-                        /*zune: 循环次数播放完成之前，不移除*/
-                        if ((playLoop ?: 0) > 0) {
+                        /*zune: 循环次数播放完成之前，不移除; 设置不自动移除的话，也不移除*/
+                        if ((playLoop ?: 0) > 0 || !animView.autoDismiss) {
                             return
                         }
                         if (animView.parent is ViewGroup) {
@@ -89,10 +119,15 @@ class VaPlayerUtils {
             } else {
                 animView.setAnimListener(listener)
             }
-            if (assetsPath != null) {
-                animView.startPlay(animView.context.assets, assetsPath)
-            } else if (file != null) {
-                animView.startPlay(file)
+        }
+
+        @JvmStatic
+        fun stopPlay(viewGroup: ViewGroup) {
+            for(i in 0 until  viewGroup.childCount) {
+                val it = viewGroup.getChildAt(i)
+                if (it is AnimView && it.isRunning()) {
+                    it.stopPlay()
+                }
             }
         }
 
@@ -102,12 +137,13 @@ class VaPlayerUtils {
         private fun resetCenterInside(animView: AnimView) {
             var resetWidth = false
             var resetHeight = false
-            if ((animView.parent as FrameLayout).layoutParams.width == WRAP_CONTENT) {
-                (animView.parent as FrameLayout).layoutParams.width = 1
+            /*zune: 因为wrap_content被包裹的时候，布局不会变，不会执行getLayoutParam方法，所以先提前给他设置为1像素*/
+            if ((animView.parent as? FrameLayout)?.layoutParams?.width == WRAP_CONTENT) {
+                (animView.parent as? FrameLayout)?.layoutParams?.width = 1
                 resetWidth = true
             }
-            if ((animView.parent as FrameLayout).layoutParams.height == WRAP_CONTENT) {
-                (animView.parent as FrameLayout).layoutParams.height = 1
+            if ((animView.parent as? FrameLayout)?.layoutParams?.height == WRAP_CONTENT) {
+                (animView.parent as? FrameLayout)?.layoutParams?.height = 1
                 resetHeight = true
             }
             animView.setScaleType(object : IScaleType {
@@ -120,19 +156,19 @@ class VaPlayerUtils {
                     videoHeight: Int,
                     layoutParams: FrameLayout.LayoutParams
                 ): FrameLayout.LayoutParams {
-                    this.videoWidth = videoWidth
-                    this.videoHeight = videoHeight
-                    val width = (animView.parent as FrameLayout).layoutParams.width
-                    val height = (animView.parent as FrameLayout).layoutParams.height
+                    this.videoWidth = dp2px(animView.context, videoWidth / 3f)
+                    this.videoHeight = dp2px(animView.context, videoHeight / 3f)
+                    val width = (animView.parent as? FrameLayout)?.layoutParams?.width ?: 0
+                    val height = (animView.parent as? FrameLayout)?.layoutParams?.height ?: 0
                     if (resetWidth) {
-                        (animView.parent as FrameLayout).layoutParams.width = WRAP_CONTENT
+                        (animView.parent as? FrameLayout)?.layoutParams?.width = WRAP_CONTENT
                     }
                     if (resetHeight) {
-                        (animView.parent as FrameLayout).layoutParams.height = WRAP_CONTENT
+                        (animView.parent as? FrameLayout)?.layoutParams?.height = WRAP_CONTENT
                     }
                     return FrameLayout.LayoutParams(
-                        if (width > 1) width else videoWidth,
-                        if (height > 1) height else videoHeight
+                        if (width > 1) width else this.videoWidth,
+                        if (height > 1) height else this.videoHeight
                     ).apply {
                         gravity = Gravity.CENTER
                     }
@@ -165,7 +201,7 @@ class VaPlayerUtils {
                         (layoutWidth.toFloat() * (videoHeight.toFloat() / videoWidth)).toInt()
                             .coerceAtMost(layoutHeight)
                     )
-                    castParams.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    castParams.gravity = Gravity.CENTER
                     return castParams
                 }
 
