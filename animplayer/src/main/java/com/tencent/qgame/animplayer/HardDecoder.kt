@@ -371,8 +371,10 @@ class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), S
                 decoder?.apply {
                     stop()
                     release()
+                    this@HardDecoder.decoder = null
                 }
                 extractor?.release()
+                this@HardDecoder.extractor = null
                 glTexture?.release()
                 glTexture = null
                 speedControlUtil.reset()
