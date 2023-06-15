@@ -26,17 +26,11 @@ import com.tencent.qgame.animplayer.file.IFileContainer
 import com.tencent.qgame.animplayer.util.ALog
 import com.tencent.qgame.animplayer.util.MediaUtil
 
-class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), SurfaceTexture.OnFrameAvailableListener {
+class HardDecoder(player: AnimPlayer) : Decoder(player), SurfaceTexture.OnFrameAvailableListener {
 
 
     companion object {
         private const val TAG = "${Constant.TAG}.HardDecoder"
-    }
-
-    private var autoDismiss = true
-
-    init {
-        this.autoDismiss = autoDismiss
     }
 
     private var surface: Surface? = null
@@ -354,13 +348,7 @@ class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), S
     }
 
     private fun release(decoder: MediaCodec?, extractor: MediaExtractor?) {
-        if (!autoDismiss) {
-            return
-        }
-        realRelease(decoder, extractor)
-    }
-
-    private fun realRelease(decoder: MediaCodec?, extractor: MediaExtractor?) {
+        onReleaseListener?.getLastFrame()
         renderThread.handler?.post {
             render?.clearFrame()
             try {
@@ -395,7 +383,6 @@ class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), S
         } else {
             destroyInner()
         }
-        realRelease(null, null)
     }
 
     private fun destroyInner() {
@@ -407,5 +394,11 @@ class HardDecoder(player: AnimPlayer, autoDismiss: Boolean) : Decoder(player), S
             onVideoDestroy()
             destroyThread()
         }
+    }
+
+    var onReleaseListener: OnReleaseListener? = null
+
+    interface OnReleaseListener {
+        fun getLastFrame()
     }
 }

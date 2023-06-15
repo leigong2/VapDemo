@@ -17,14 +17,17 @@ package com.tencent.qgame.animplayer
 
 import android.content.Context
 import android.content.res.AssetManager
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.TextureView
 import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
+import android.widget.ImageView
 import com.tencent.qgame.animplayer.file.AssetsFileContainer
 import com.tencent.qgame.animplayer.file.FileContainer
 import com.tencent.qgame.animplayer.file.IFileContainer
@@ -76,14 +79,12 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
             }
 
             override fun onVideoComplete() {
-                if (autoDismiss) {
-                    hide()
-                }
+                hide(!autoDismiss)
                 animListener?.onVideoComplete()
             }
 
             override fun onVideoDestroy() {
-                hide()
+                hide(!autoDismiss)
                 animListener?.onVideoDestroy()
             }
 
@@ -97,8 +98,9 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
     // 保证AnimView已经布局完成才加入TextureView
     private var onSizeChangedCalled = false
     private var needPrepareTextureView = false
+    private var lastFrame: Bitmap? = null   //最后一帧
     private val prepareTextureViewRunnable = Runnable {
-        removeAllViews()
+        removeAllViews(false)
         innerTextureView = InnerTextureView(context).apply {
             player = this@AnimView.player
             isOpaque = false
@@ -110,8 +112,40 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
 
 
     init {
-        hide()
-        player = AnimPlayer(this)
+        hide(false)
+        player = AnimPlayer(this).apply {
+            onReleaseListener = object : HardDecoder.OnReleaseListener {
+                override fun getLastFrame() {
+                    if (!autoDismiss) {
+                        uiHandler.post {
+                            innerTextureView?.bitmap?.also {
+                                lastFrame = it
+                                for (i in 0 until childCount) {
+                                    if (getChildAt(i) is ImageView) {
+                                        (getChildAt(i) as ImageView).setImageBitmap(it)
+                                        return@also
+                                    }
+                                }
+                                val imageView = ImageView(context)
+                                if (scaleTypeUtil.currentScaleType == ScaleType.FIT_XY) {
+                                    imageView.layoutParams = LayoutParams(MATCH_PARENT, MATCH_PARENT).apply {
+                                        gravity = Gravity.CENTER
+                                    }
+                                    imageView.scaleType = ImageView.ScaleType.FIT_CENTER
+                                } else {
+                                    imageView.layoutParams = LayoutParams(this@AnimView.layoutParams.width, this@AnimView.layoutParams.height).apply {
+                                        gravity = Gravity.CENTER
+                                    }
+                                    imageView.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                                }
+                                imageView.setImageBitmap(it)
+                                addView(imageView)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         player.animListener = animProxyListener
     }
 
@@ -144,7 +178,7 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
         uiHandler.post {
             innerTextureView?.surfaceTextureListener = null
             innerTextureView = null
-            removeAllViews()
+            removeAllViews(!autoDismiss)
         }
         return true
     }
@@ -182,6 +216,8 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
     override fun onDetachedFromWindow() {
         ALog.i(TAG, "onDetachedFromWindow")
         super.onDetachedFromWindow()
+        lastFrame?.recycle()
+        lastFrame = null
         player.isDetachedFromWindow = true
         player.onSurfaceTextureDestroyed()
     }
@@ -281,7 +317,7 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
             }
             if (!player.isRunning()) {
                 lastFile = fileContainer
-                player.startPlay(fileContainer, autoDismiss)
+                player.startPlay(fileContainer)
             } else {
                 ALog.e(TAG, "is running can not start")
             }
@@ -301,9 +337,25 @@ open class AnimView @JvmOverloads constructor(context: Context, attrs: Attribute
         return scaleTypeUtil.getRealSize()
     }
 
-    private fun hide() {
+    private fun hide(justTexture: Boolean) {
         lastFile?.close()
         ui {
+            removeAllViews(justTexture)
+        }
+    }
+
+    private fun removeAllViews(justTexture: Boolean) {
+        if (justTexture) {
+            val toBeDelete: MutableList<View> = ArrayList()
+            for (i in 0 until childCount) {
+                if (getChildAt(i) is InnerTextureView) {
+                    toBeDelete.add(getChildAt(i))
+                }
+            }
+            for (child in toBeDelete) {
+                removeView(child)
+            }
+        } else {
             removeAllViews()
         }
     }

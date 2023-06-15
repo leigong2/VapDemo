@@ -146,6 +146,7 @@ class VaPlayerUtils {
                 (animView.parent as? FrameLayout)?.layoutParams?.height = 1
                 resetHeight = true
             }
+            animView.setScaleType(ScaleType.FIT_CENTER)
             animView.setScaleType(object : IScaleType {
                 var videoWidth = 0
                 var videoHeight = 0
@@ -184,6 +185,7 @@ class VaPlayerUtils {
          * 全屏的播放容器
          */
         private fun resetFitXYScaleType(animView: AnimView) {
+            animView.setScaleType(ScaleType.FIT_XY)
             animView.setScaleType(object : IScaleType {
                 var videoWidth = 0
                 var videoHeight = 0

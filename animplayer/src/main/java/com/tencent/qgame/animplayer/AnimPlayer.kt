@@ -30,6 +30,8 @@ class AnimPlayer(val animView: IAnimView) {
     var animListener: IAnimListener? = null
     var decoder: Decoder? = null
     var audioPlayer: AudioPlayer? = null
+
+    var onReleaseListener: HardDecoder.OnReleaseListener? = null
     var fps: Int = 0
         set(value) {
             decoder?.fps = value
@@ -76,9 +78,9 @@ class AnimPlayer(val animView: IAnimView) {
         decoder?.onSurfaceSizeChanged(width, height)
     }
 
-    fun startPlay(fileContainer: IFileContainer, autoDismiss: Boolean) {
+    fun startPlay(fileContainer: IFileContainer) {
         isStartRunning = true
-        prepareDecoder(autoDismiss)
+        prepareDecoder()
         if (decoder?.prepareThread() == false) {
             isStartRunning = false
             decoder?.onFailed(Constant.REPORT_ERROR_TYPE_CREATE_THREAD, Constant.ERROR_MSG_CREATE_THREAD)
@@ -133,11 +135,12 @@ class AnimPlayer(val animView: IAnimView) {
 
     }
 
-    private fun prepareDecoder(autoDismiss: Boolean) {
+    private fun prepareDecoder() {
         if (decoder == null) {
-            decoder = HardDecoder(this, autoDismiss).apply {
+            decoder = HardDecoder(this).apply {
                 playLoop = this@AnimPlayer.playLoop
                 fps = this@AnimPlayer.fps
+                onReleaseListener = this@AnimPlayer.onReleaseListener
             }
         }
         if (audioPlayer == null) {
